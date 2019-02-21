@@ -5,48 +5,47 @@
 
 @author:Brook
 """
-import json
-
 from keras.models import Sequential
 from keras.layers import Embedding, LSTM,Bidirectional, Dense, TimeDistributed, Dropout
 from keras_contrib.layers.crf import CRF
 from keras_contrib.utils import save_load_utils
 
+from util import load_vocab, TAGS
+word2id = load_vocab()
+
+
+VOCAB_SIZE = len(word2id) 
+NUM_CLASS =  len(TAGS)
 
 EMBEDDING_OUT_DIM = 128
 TIME_STAMPS = 100
 HIDDEN_UNITS = 200
 DROPOUT_RATE = 0.3
 
-with open("data/const.json") as f:
-    const = json.load(f)
-
-VOCAB_SIZE =  const['VOCAB_SIZE']
-NUM_CLASS =  len(const['TAGS'])
+EMBEDDING_INPUT_LEN = 500
 
 
 def build_bilstm_crf_model():
     model = Sequential()
-    model.add(Embedding(VOCAB_SIZE, output_dim=EMBEDDING_OUT_DIM, input_length=TIME_STAMPS))
+    model.add(Embedding(VOCAB_SIZE, output_dim=EMBEDDING_OUT_DIM, input_length=EMBEDDING_INPUT_LEN))
     model.add(Bidirectional(LSTM(HIDDEN_UNITS, return_sequences=True)))
-    model.add(Dropout(DROPOUT_RATE))
-    model.add(Bidirectional(LSTM(HIDDEN_UNITS, return_sequences=True)))
-    model.add(Dropout(DROPOUT_RATE))
+    #model.add(Dropout(DROPOUT_RATE))
+    #model.add(Bidirectional(LSTM(HIDDEN_UNITS, return_sequences=True)))
+    #model.add(Dropout(DROPOUT_RATE))
     model.add(TimeDistributed(Dense(NUM_CLASS)))
-    
-    crf_layer = CRF(NUM_CLASS)
-    model.add(crf_layer)
-    model.compile("rmsprop", loss=crf_layer.loss_function, metrics=[crf_layer.accuracy])
+    crf = CRF(NUM_CLASS, sparse_target=True)
+    model.add(crf)
+    model.compile("adam", loss=crf.loss_function, metrics=[crf.accuracy])
     return model
 
 
-def save_bilstm_crf_model(mode, filename):
+def save_bilstm_crf_model(model, filename):
     save_load_utils.save_all_weights(model, filename)
 
 
 def load_bilstm_crf_model(filename):
     model = build_bilstm_crf_model()
-    save_load_utils.load_all_weights(mode, filename)
+    save_load_utils.load_all_weights(model, filename)
     return model
 
 
