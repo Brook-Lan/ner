@@ -32,7 +32,7 @@ TAGS = ("O",
         "B-Frequency", "I-Frequency", 
         "B-Anatomy",  "I-Anatomy", 
         "B-Test", "I-Test",
-        "B-Method"，"I-Method", 
+        "B-Method", "I-Method", 
          )
 
 
