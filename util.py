@@ -8,7 +8,9 @@
 import os
 import re
 import json
+from collections import namedtuple
 
+import numpy as np
 from keras.preprocessing.sequence import pad_sequences
 
 from corpus import corpus as _corpus
@@ -33,7 +35,7 @@ TAGS = ("O",
         "B-Anatomy",  "I-Anatomy", 
         "B-Test", "I-Test",
         "B-Method", "I-Method", 
-         )
+        )
 
 
 def build_vocab():
@@ -139,46 +141,79 @@ class DataProcessor:
         y_train = pad_sequences(y_train, max_len)
         return y_train
 
-def recovery_padding(sequences, origin_sequences, method=None):
-    """还原被padding的序列
+
+EntityIndex = namedtuple("Entity_Index",["entity_type", "begin", "end"])
+Entity = namedtuple("Entity", ["entity_type", "entity"])
+
+class Result:
+    """模型输出结果的再次处理
     """
-    new_sequences = []
-    for seq, origin_seq in zip(sequences, origin_sequences):
-        length = len(origin_seq)
-        new_seq = seq[-length:]
-        new_sequences.append(new_seq)
-    return new_sequences
+    def __init__(self, padding_method=None):
+        self.padding_method = padding_method
+        self.TAGS = TAGS
 
+    def recover_tags(self, output):
+        """还原成tag序列
+        """
+        indexes_list = [np.argmax(a_output, axis=-1) for a_output in output]
+        tags_list = [[self.TAGS[ind] for ind in indexes] for indexes in indexes_list]
+        return tags_list
 
-def tags_to_index(tags):
-    tag_ind = []
-    cur_tag = "o"
-    type_ = "non"
-    start = 0
-    for i, tag in enumerate(tag_seq):
-        if tag == "O":
-            if cur_tag == "i":
-                tag_ind.append((type_, start, i))
-            start = i
-            cur_tag = 'o'
-            
-        elif tag.startswith("B-"):
-            if cur_tag == "i":
-                tag_ind.append((type_, start, i))
-            start = i
-            cur_tag = "b"
-            type_ = tag.replace("B-", "")
-            
-        elif tag.startswith("I-"):
-            cur_tag = 'i'
-        else:
-            raise ValueError("unknown tag: %s" % tag)
-    return tag_ind
+    def remove_padding(self, raw_output, input_data):
+        """去除padding
+        """
+        output = []
+        for a_output, a_input in zip(raw_output, input_data):
+            output.append(a_output[-len(a_input):])
+        return output
 
-def tagseq_to_indexs(tag_seq):
-    for seq in tag_seq:
-        index = tags_to_index(seq)
-        yield index
+    def _cal_entity_index(self, tags):
+        tag_ind = []
+        cur_tag = "o"
+        type_ = "non"
+        start = 0
+        for i, tag in enumerate(tags):
+            if tag == "O":
+                if cur_tag == "i":
+                    tag_ind.append(EntityIndex(type_, start, i))
+                start = i
+                cur_tag = 'o'
+                
+            elif tag.startswith("B-"):
+                if cur_tag == "i":
+                    tag_ind.append(EntityIndex(type_, start, i))
+                start = i
+                cur_tag = "b"
+                type_ = tag.replace("B-", "")
+                
+            elif tag.startswith("I-"):
+                cur_tag = 'i'
+            else:
+                raise ValueError("unknown tag: %s" % tag)
+        return tag_ind
+    
+    def cal_entity_index(self, tags_list):
+        """计算实体位置
+        """
+        indexes = []
+        for tags in tags_list:
+            index = self._cal_entity_index(tags)
+            indexes.append(index)
+        return indexes
+
+    def extract(self, raw_output, input_data):
+        output = self.remove_padding(raw_output, input_data)
+        tags_list = self.recover_tags(output)
+        entity_indexes = self.cal_entity_index(tags_list)
+        results = []
+        for doc, indexes in zip(input_data, entity_indexes):
+            entities = []
+            for index in indexes:
+                ent = doc[index.begin:index.end]
+                entity = Entity(index.entity_type, ent)
+                entities.append(entity)
+            results.append(entities)
+        return results
 
 
 if __name__ == "__main__":
