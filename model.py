@@ -5,6 +5,8 @@
 
 @author:Brook
 """
+import os
+
 from keras.models import Sequential
 from keras.layers import Embedding, LSTM,Bidirectional, Dense, TimeDistributed, Dropout
 from keras_contrib.layers.crf import CRF
@@ -24,6 +26,7 @@ DROPOUT_RATE = 0.3
 
 EMBEDDING_INPUT_LEN = 500
 
+MODEL_FILE = os.path.join(os.path.dirname(__file__), "data", "model.h5") 
 
 def build_bilstm_crf_model():
     model = Sequential()
@@ -39,16 +42,16 @@ def build_bilstm_crf_model():
     return model
 
 
-def save_bilstm_crf_model(model, filename):
-    save_load_utils.save_all_weights(model, filename)
+def save_model(model, filename=None, include_optimizer=True):
+    if filename is None:
+        filename = MODEL_FILE
+    save_load_utils.save_all_weights(model, filename, include_optimizer)
 
-
-def load_bilstm_crf_model(filename):
+   
+def load_model(filename=None, include_optimizer=True):
+    if filename is None:
+        filename = MODEL_FILE
     model = build_bilstm_crf_model()
-    save_load_utils.load_all_weights(model, filename)
+    save_load_utils.load_all_weights(model, filename, include_optimizer)
     return model
 
-
-if __name__ == "__main__":
-    model = build_bilstm_crf_model()
-    model.summary()

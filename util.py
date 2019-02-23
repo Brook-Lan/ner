@@ -68,20 +68,18 @@ def load_vocab():
 
 
 class IdMapper:
-    """id映射
+    """id映射的类方法
     - 将词的列拜映射为对应的id的列表
     - 将标注映射为对应的标注id
     """
-    def __init__(self):
-        with open(VOCAB_PATH) as f:
-            word2id = json.load(f)
-        self.word2id = word2id
-        self.tag2id = {tag:i for i, tag in enumerate(TAGS)}
+    WORD2ID = load_vocab()
+    TAG2ID = {tag:i for i, tag in enumerate(TAGS)}
 
-    def encode_sequences(self, sequences):
+    @classmethod
+    def encode_sequences(cls, sequences):
         """词序列转换到id序列
         """
-        word2id = self.word2id
+        word2id = cls.WORD2ID
         new_sequences = []
         for seq in sequences:
             ids = []
@@ -94,10 +92,11 @@ class IdMapper:
             new_sequences.append(ids)
         return new_sequences
 
-    def encode_tags(self, tags_list):
+    @classmethod
+    def encode_tags(cls, tags_list):
         """编码标注序列为id
         """
-        tag2id = self.tag2id
+        tag2id = cls.TAG2ID
         new_tags = []
         for tags in tags_list:
             ids = []
@@ -106,10 +105,11 @@ class IdMapper:
             new_tags.append(ids)
         return new_tags
 
-    def decode_tags(self, tags_list):
+    @classmethod
+    def decode_tags(cls, tags_list):
         """将标注id还原为标注
         """
-        id2tag = {v:k for k,v in self.tag2id.items()}
+        id2tag = {v:k for k,v in cls.tag2id.items()}
         new_tags = []
         for tags in tags_list:
             ids = []
@@ -119,89 +119,87 @@ class IdMapper:
         return new_tags
 
 
-class DataProcessor:
-    """数据处理器
-    将原始的数据转换为模型的输入
-    """
-    def __init__(self, seq_len=None):
-        self.seq_len = 500 if seq_len is None else seq_len
-        self.im = IdMapper()
+def encode_docs(docs, max_len=500):
+    x_train = IdMapper.encode_sequences(docs)
+    x_train = pad_sequences(x_train, max_len)
+    return x_train
 
-    def docs_to_sequences(self, docs, max_len=None):
-        if max_len is None:
-            max_len = self.seq_len
-        x_train = self.im.encode_sequences(docs)
-        x_train = pad_sequences(x_train, max_len)
-        return x_train
 
-    def tags_to_ids(self, tags, max_len=None):
-        if max_len is None:
-            max_len = self.seq_len
-        y_train = self.im.encode_tags(tags)
-        y_train = pad_sequences(y_train, max_len)
-        return y_train
+def encode_tags(tags, max_len=500):
+    y_train = IdMapper.encode_tags(tags)
+    y_train = pad_sequences(y_train, max_len)
+    y_train = np.expand_dims(y_train, axis=-1)
+    return y_train
 
 
 EntityIndex = namedtuple("Entity_Index",["entity_type", "begin", "end"])
 Entity = namedtuple("Entity", ["entity_type", "entity"])
 
 class Result:
-    """模型输出结果的再次处理
+    """模型输出结果的封装
     """
-    def __init__(self, padding_method=None):
-        self.padding_method = padding_method
-        self.TAGS = TAGS
+    _TAGS = TAGS
 
-    def recover_tags(self, output):
+    def __init__(self, raw_output, input_data, padding_method=None):
+        self.raw_output = raw_output
+        self.input_data = input_data
+        self.padding_method = padding_method
+
+    @classmethod
+    def recover_tags(cls, output):
         """还原成tag序列
         """
         indexes_list = [np.argmax(a_output, axis=-1) for a_output in output]
-        tags_list = [[self.TAGS[ind] for ind in indexes] for indexes in indexes_list]
+        tags_list = [[cls._TAGS[ind] for ind in indexes] for indexes in indexes_list]
         return tags_list
 
-    def remove_padding(self, raw_output, input_data):
+    @classmethod
+    def remove_padding(cls, raw_output, input_data):
         """去除padding
         """
         output = []
         for a_output, a_input in zip(raw_output, input_data):
             output.append(a_output[-len(a_input):])
         return output
-
-    def _cal_entity_index(self, tags):
-        tag_ind = []
-        cur_tag = "o"
-        type_ = "non"
-        start = 0
-        for i, tag in enumerate(tags):
-            if tag == "O":
-                if cur_tag == "i":
-                    tag_ind.append(EntityIndex(type_, start, i))
-                start = i
-                cur_tag = 'o'
-                
-            elif tag.startswith("B-"):
-                if cur_tag == "i":
-                    tag_ind.append(EntityIndex(type_, start, i))
-                start = i
-                cur_tag = "b"
-                type_ = tag.replace("B-", "")
-                
-            elif tag.startswith("I-"):
-                cur_tag = 'i'
-            else:
-                raise ValueError("unknown tag: %s" % tag)
-        return tag_ind
-    
-    def cal_entity_index(self, tags_list):
+  
+    @classmethod
+    def cal_entity_index(cls, tags_list):
         """计算实体位置
         """
+        def _cal_entity_index(tags):
+            tag_ind = []
+            cur_tag = "o"
+            type_ = "non"
+            start = 0
+            for i, tag in enumerate(tags):
+                if tag == "O":
+                    if cur_tag == "i":
+                        tag_ind.append(EntityIndex(type_, start, i))
+                    start = i
+                    cur_tag = 'o'
+                    
+                elif tag.startswith("B-"):
+                    if cur_tag == "i":
+                        tag_ind.append(EntityIndex(type_, start, i))
+                    start = i
+                    cur_tag = "b"
+                    type_ = tag.replace("B-", "")
+                    
+                elif tag.startswith("I-"):
+                    cur_tag = 'i'
+                else:
+                    raise ValueError("unknown tag: %s" % tag)
+            return tag_ind
+
         indexes = []
         for tags in tags_list:
-            index = self._cal_entity_index(tags)
+            index = _cal_entity_index(tags)
             indexes.append(index)
         return indexes
 
-    def extract(self, raw_output, input_data):
+    @property
+    def entities(self):
+        raw_output, input_data = self.raw_output, self.input_data
         output = self.remove_padding(raw_output, input_data)
         tags_list = self.recover_tags(output)
         entity_indexes = self.cal_entity_index(tags_list)
